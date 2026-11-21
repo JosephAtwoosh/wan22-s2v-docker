@@ -127,13 +127,17 @@ def mux_audio(
     audio: str | Path,
     destination: str | Path | None = None,
     *,
+    duration: float | None = None,
     ffmpeg: str = "ffmpeg",
     timeout: int = 3600,
 ) -> Path:
-    """Mux the track onto the picture, cutting to the shorter of the two.
+    """Mux the track onto the picture and end both at the same instant.
 
-    Mirrors upstream's ``-shortest``: the performance ends when the audio ends,
-    even if Wan generated a little more video than the track needed.
+    With ``duration`` the cut is explicit (``-t``). ``-shortest`` is only a
+    fallback, because it truncates by the *packet* timestamp of the shortest
+    stream: with B-frames in the copied video and AAC priming in the encoded
+    audio it drops the final frames (measured: 3 frames, 0.19 s) even when the
+    two streams are nominally the same length.
     """
     video = Path(video)
     audio = Path(audio)
@@ -156,9 +160,47 @@ def mux_audio(
         "aac",
         "-b:a",
         "192k",
-        "-shortest",
-        "-movflags",
-        "+faststart",
+    ]
+    if duration is not None:
+        command += ["-t", f"{duration:.3f}"]
+    else:
+        command.append("-shortest")
+    command += ["-movflags", "+faststart", str(temp)]
+    _run(command, timeout=timeout)
+    os.replace(temp, destination)
+    return destination
+
+
+def pad_audio(
+    audio: str | Path,
+    destination: str | Path,
+    seconds: float,
+    *,
+    ffmpeg: str = "ffmpeg",
+    timeout: int = 600,
+) -> Path:
+    """Copy the track with silence appended to ``seconds``.
+
+    The model is handed this copy so that upstream's own ``merge_video_audio``
+    (``-shortest``) never cuts the generated picture: the padded track is
+    longer than the video, so nothing is trimmed there, and the real track is
+    muxed afterwards with an explicit ``-t``. The tail the model generates on
+    silence is discarded by that cut.
+    """
+    audio = Path(audio)
+    destination = Path(destination)
+    temp = destination.with_name(destination.stem + ".padding" + destination.suffix)
+    command = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(audio),
+        "-af",
+        "apad",
+        "-t",
+        f"{seconds:.3f}",
+        "-c:a",
+        "pcm_s16le",
         str(temp),
     ]
     _run(command, timeout=timeout)

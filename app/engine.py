@@ -40,6 +40,13 @@ class RenderRequest:
     raw_path: Path
     output_path: Path
     log_path: Path
+    # Silence-padded copy handed to the model, so upstream's own -shortest mux
+    # cannot shave the tail of the picture. See media.pad_audio().
+    audio_for_model: Path | None = None
+
+    @property
+    def model_audio(self) -> Path:
+        return self.audio_for_model or self.performance.audio
 
     @property
     def work_dir(self) -> Path:
@@ -216,7 +223,7 @@ class WanS2VEngine:
             ckpt_dir=settings.model_id,
             prompt=request.performance.prompt,
             image=request.performance.image,
-            audio=request.performance.audio,
+            audio=request.model_audio,
             save_file=request.raw_path,
             size_key=SIZE_KEYS[params["size"]],
             infer_frames=params["infer_frames"],

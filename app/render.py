@@ -21,7 +21,7 @@ from typing import Any
 from . import __version__
 from .config import SIZE_PRESETS, Settings
 from .engine import Engine, RenderRequest, RenderResult, pick_seed
-from .media import MediaError, conform_fps, mux_audio, probe
+from .media import MediaError, conform_fps, mux_audio, pad_audio, probe
 from .performance import (
     Performance,
     PerformanceError,
@@ -37,9 +37,9 @@ VIDEO_NAME = "video.mp4"
 MANIFEST_NAME = "manifest.json"
 LOG_NAME = "render.log"
 
-# A render may be shorter than the audio by a frame or two of container
-# rounding; more than this and something is wrong.
-DURATION_TOLERANCE_S = 0.25
+# The mux is explicit (`-t`), so the two streams should agree to well under a
+# frame; anything larger is a bug, not container rounding.
+DURATION_TOLERANCE_S = 0.12
 
 
 class RenderError(RuntimeError):
@@ -250,6 +250,22 @@ def render(
     log_path = out_dir / LOG_NAME
     log_path.write_text("", encoding="utf-8")
 
+    # Hand the model a track that lasts as long as the generated picture.
+    # Upstream's generate.py muxes its own raw video with `-shortest` before we
+    # see it, and when the picture outlasts the sound that drops the last
+    # frames of the performance (measured: 3 frames, 0.19 s). With a padded
+    # copy it has nothing to trim; the real track is muxed below with an
+    # explicit duration.
+    padded_audio: Path | None = None
+    if engine.name != "mock" and plan.video_seconds > plan.audio_seconds + 1e-6:
+        padded_audio = out_dir / "audio.padded.wav"
+        pad_audio(
+            performance.audio,
+            padded_audio,
+            plan.video_seconds + 1.0,
+            ffmpeg=settings.ffmpeg,
+        )
+
     request = RenderRequest(
         performance=performance,
         plan=plan,
@@ -257,19 +273,22 @@ def render(
         raw_path=raw_path,
         output_path=output_path,
         log_path=log_path,
+        audio_for_model=padded_audio,
     )
     result: RenderResult = engine.render(request)
 
     if result.synthetic:
         output_path.write_bytes(result.path.read_bytes())
+        output_info: dict[str, Any] = {"synthetic": True}
     else:
         # Always re-mux: it guarantees an audio stream (upstream's merge can
-        # fail quietly), cuts to the shorter of picture and sound, and writes
+        # fail quietly), ends picture and sound at the same instant, and writes
         # a faststart mp4.
         mux_audio(
             result.path,
             performance.audio,
             output_path,
+            duration=min(plan.video_seconds, plan.audio_seconds),
             ffmpeg=settings.ffmpeg,
         )
         if params["conform_fps"]:
@@ -278,11 +297,12 @@ def render(
                 params["conform_fps"],
                 ffmpeg=settings.ffmpeg,
             )
+        output_info = _verify(
+            output_path, plan, settings, conform_fps_value=params["conform_fps"]
+        )
 
-    output_info: dict[str, Any] = {"synthetic": True} if result.synthetic else _verify(
-        output_path, plan, settings, conform_fps_value=params["conform_fps"]
-    )
-
+    if padded_audio is not None and padded_audio.exists():
+        padded_audio.unlink()
     if not result.synthetic and raw_path.exists():
         raw_path.unlink()
 
@@ -304,6 +324,11 @@ def render(
                 "file": performance.audio.name,
                 "sha256": sha256_file(performance.audio),
                 "seconds": round(plan.audio_seconds, 3),
+                **(
+                    {"model_seconds": round(plan.video_seconds + 1.0, 3), "padded": True}
+                    if padded_audio
+                    else {}
+                ),
             },
             "prompt": {
                 "file": performance.prompt_path.name,
