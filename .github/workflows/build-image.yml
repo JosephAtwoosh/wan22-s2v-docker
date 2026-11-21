@@ -3,9 +3,9 @@ name: Build Wan2.2-S2V image
 # Builds the CUDA 12.8 image on a GitHub-hosted runner (Docker, full network)
 # and pushes it to GHCR, where Vast.ai can pull it.
 #
-# No local Docker needed. Run it from the repo's Actions tab ("Run workflow");
-# the default GITHUB_TOKEN grants package write on a public repo, so no secrets
-# are required. The base image is ~8 GB and the pip layers dominate the build.
+# No local Docker needed. Run it from the repo's Actions tab ("Run workflow"),
+# or push a build-* tag (the trigger a contents-only token can use). The base
+# image is ~8 GB and the pip layers dominate the build.
 
 on:
   workflow_dispatch:
@@ -82,8 +82,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Proves the Python stack imports in the real image: torch, the pinned
-      # Wan checkout, and flash-attn (which S2V calls unconditionally).
+      # Proves the Python stack is present in the real image. This runner has no
+      # GPU, and importing flash_attn (or wan, which imports it) initialises
+      # CUDA and aborts with "Found no NVIDIA driver", so presence is checked
+      # without importing the extension. torch's CUDA build string is safe.
       - name: Smoke test imports
         env:
           IMAGE: ${{ steps.img.outputs.image }}
@@ -91,14 +93,21 @@ jobs:
           set -eux
           TAG="${{ github.event.inputs.tag || 'latest' }}"
           docker run --rm -i "${IMAGE}:${TAG}" python - <<'PY'
-          import torch, flash_attn, wan
-          from wan.configs import WAN_CONFIGS
-          cfg = WAN_CONFIGS["s2v-14B"]
+          import importlib.util
+          import sys
+          import torch
+
           print("torch", torch.__version__, "| cuda build", torch.version.cuda)
-          print("flash_attn", flash_attn.__version__)
-          print("wan s2v", cfg.transformer.num_layers, "layers,", cfg.sample_steps, "steps,", cfg.sample_fps, "fps")
+          print("upstream commit", open("/opt/Wan2.2/.upstream-commit").read().strip())
+          needed = ("flash_attn", "wan", "cv2", "decord", "librosa", "diffusers", "transformers", "peft")
+          missing = [name for name in needed if importlib.util.find_spec(name) is None]
+          print("modules present:", ", ".join(n for n in needed if n not in missing))
+          if missing:
+              print("MISSING:", ", ".join(missing), file=sys.stderr)
+              sys.exit(1)
           print("ok")
           PY
+          docker run --rm "${IMAGE}:${TAG}" pip show flash-attn | sed -n '1,3p'
 
       # The image ships the tests; running them here checks the real
       # dependency set, not the CI's.
