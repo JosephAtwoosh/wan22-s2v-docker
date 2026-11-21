@@ -157,10 +157,9 @@ def run_checks(settings: Settings) -> Report:
                 report.add(
                     "gpu",
                     WARN,
-                    f"{vram_gib:.0f} GiB is below upstream's 80 GB figure: the DiT shards are "
-                    "32.6 GB in bf16 and are materialised on the card for every clip, with the "
-                    "11.4 GB text encoder also resident during prompt encoding. 480p with short "
-                    "clips may finish; 720p is expected to OOM",
+                    f"{vram_gib:.0f} GiB is below upstream's 80 GB figure. Measured peaks: "
+                    "42.6 GiB at 576x576/48 frames and 49.3 GiB at 768x768/80 frames, so this "
+                    "card can only run short 480p clips (about 1 GiB of headroom)",
                 )
             else:
                 report.add(

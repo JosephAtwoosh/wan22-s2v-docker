@@ -17,12 +17,12 @@ rubbery: the model spends the clip trying to arrive at a shape it was handed
 instead of finishing the performance the track asked for. Wan2.2-S2V drives
 the whole clip from the audio, so the ending is an outcome, not a constraint.
 
-Status: **the code, service and planning are tested on CPU (111 tests, and the
-same suite runs inside the built image) and the image builds in CI. It has not
-yet been rendered on a rented GPU** — treat the first GPU run as verification,
-not production: `wan22-s2v selftest` renders a synthetic clip to prove the
-stack, then one real shot. See [docs/VAST.md](docs/VAST.md) for the rental
-recipe.
+Status: **verified end to end on a rented H100 80 GB (2026-11-21)** — weights,
+attention, sampling, VAE decode and mux all ran. The first run found two real
+bugs (a missing `dashscope` import, and a three-frame tail loss in upstream's
+own mux), both fixed and now covered by tests. Measured timings, VRAM and the
+cost per clip are in [Performance](#performance); 116 tests, and the same suite
+runs inside the built image.
 
 - **One still, one track** — no end frame, no pose video, no keyframe pair.
 - **Planned before it costs anything** — `plan` reports the exact resolution,
@@ -41,7 +41,7 @@ recipe.
 
 | | Minimum | Recommended |
 |---|---|---|
-| GPU | 48 GB — marginal, untested (480p only) | 80 GB (A100/H100) |
+| GPU | 48 GB: short 480p clips only (measured 42.6 GiB peak) | 80 GB (A100/H100) |
 | Driver | 570+ (CUDA 12.8) | 580+ |
 | RAM | 64 GB | 96 GB |
 | Disk | 80 GB | 150 GB (45.6 GB weights + image + outputs) |
@@ -51,9 +51,11 @@ Upstream's own single-GPU figure is **80 GB**, and the arithmetic says the same.
 The checkpoint's DiT shards alone are **32.6 GB** in bf16 (14B parameters plus
 the audio-injection and motion modules), and `--offload_model` still moves the
 whole model onto the card for every clip; the UMT5 encoder (11.4 GB) also visits
-the card before sampling starts. That leaves a 48 GB card roughly 4 GB of slack
-for activations, which is why 80 GB is the supported configuration: `doctor`
-warns below 70 GiB and fails below 40 GiB (the weights alone will not fit).
+the card before sampling starts. Measurements bear that out: **42.6 GiB peak**
+for 576x576/48 frames, **49.3 GiB** for 768x768/80 frames. A 48 GB card has
+about 44 GiB usable, so it cannot run the default 80-frame clip; 80 GB is the
+supported configuration. `doctor` warns below 70 GiB and fails below 40 GiB
+(the weights alone will not fit).
 
 Host RAM is what holds the offloaded pieces between clips: the DiT (32.6 GB)
 and the text encoder (11.4 GB) are both resident at once, so 64 GB is the real
@@ -278,14 +280,33 @@ persistent volume or re-download into the instance disk and budget ~$0.20.
 
 ## Performance
 
-Deliberately absent: no GPU run has happened yet, so any number here would be
-invented. The manifest's `timing.realtime_factor` is the number to collect on
-the first run (`render_seconds / video_seconds`), and
-`timing.render_seconds` includes model load, which dominates a one-clip job.
+Measured on **one H100 SXM 80 GB** (driver 615.71.09), 2026-11-21, 40 sampling
+steps, guidance 4.5, 16 fps, one clip per job:
 
-What is known from the model card and the config: 40 sampling steps, 16 fps,
-80-frame clips, classifier-free guidance at 4.5. Cost scales linearly with
-clips; a 42 s line is 9 clips in one process, and model load is paid once.
+| Render | Output | Sampling | Wall | Peak VRAM |
+|---|---|---|---|---|
+| 480p, 48-frame clip | 576x576, 3.0 s | 4.85 s/step (3:13) | 321 s | **42.6 GiB** |
+| 480p, 80-frame clip | 576x576, 3.0 s | 8.8 s/step (5:50) | 475 s | **42.6 GiB** |
+| 720p, 80-frame clip | 768x768, 3.0 s | 20.6 s/step (13:44) | 954 s | **49.3 GiB** |
+
+Model load is ~90 s of each job and is paid once per process, which is why
+`batch` renders a scene in one process and `perform` is for retakes. Sampling
+cost scales with frames x pixels: the 80-frame 720p clip is ~3x the 48-frame
+480p one. At $1.56/h that is about **$0.14**, **$0.21** and **$0.41** for the
+three rows — the expensive part of a film is still the stills, not the video.
+
+The 720p row was rendered before the mux fix (its file came back 45 frames
+instead of 48, which is how the bug was found); its timing and VRAM are still
+valid. The 480p/80-frame row is the post-fix run: 48 frames, 3.000 s of picture
+and 3.000 s of track.
+
+What to expect from the manifest: `timing.render_seconds` includes model load,
+`timing.realtime_factor` is `render_seconds / video_seconds` (106× for the
+smallest run), and `params.seed` is the seed that reproduces it.
+
+Caveats: one card, one synthetic still, 40 steps. No claim is made for 720P
+1280x704 on a 16:9 still (that is ~1.5× the pixels of the 768x768 run above, so
+expect ~60 GiB peak), for multi-GPU, or for `--no-offload`.
 
 ## Troubleshooting
 
@@ -315,6 +336,17 @@ speakers, or a prompt that describes a pose instead of an intention.
 
 **`plan` warns the still is small.** Wan does not upscale references. Render
 from a bigger still or accept the smaller frame.
+
+**`generate.py` exits 1 with `No module named 'dashscope'`.** `generate.py`
+imports `wan.utils.prompt_extend` at module load, and that imports `dashscope`
+even though this service never uses prompt extension. The image pins it; a
+custom build that trims requirements will break here.
+
+**The clip ends a frame or two before the audio.** Fixed in 0.1.1: upstream
+muxes its own raw video with `-shortest` before this service sees it, which
+dropped the last frames whenever the picture outlasted the track. The renderer
+now hands the model a silence-padded copy and cuts the final mux with an
+explicit duration and frame count.
 
 ## Licensing
 

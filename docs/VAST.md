@@ -43,13 +43,14 @@ is amd64 with a cp312 x86_64 flash-attn wheel, so they cannot run it.
 |---|---|---|---|
 | A100 SXM4 80 GB | 80 GB | $1.00–1.60/h | the upstream-recommended configuration |
 | H100 PCIE 80 GB | 80 GB | $1.80–2.60/h | faster, same fit |
-| L40S 48 GB | 48 GB | $0.70–1.00/h | **marginal and untested**; 480p only |
+| L40S 48 GB | 48 GB | $0.70–1.00/h | short 480p clips only; 42.6 GiB peak measured, ~1 GiB headroom |
 
 The checkpoint's DiT shards are **32.6 GB** in bf16 and are moved onto the card
 for every clip; the UMT5 encoder (11.4 GB) is also on the card while the prompt
-is encoded. A 48 GB card therefore has only a few GB for activations: 480p may
-finish, 720p is expected to OOM. Below 40 GB the weights do not fit at all.
-`doctor` encodes exactly these thresholds.
+is encoded. Measured peaks: **42.6 GiB** at 576x576/48 frames, **49.3 GiB** at
+768x768/80 frames. A 48 GB card (~44 GiB usable) therefore cannot run the
+default 80-frame clip, and only just fits the short 480p one. Below 40 GB the
+weights do not fit at all. `doctor` encodes exactly these thresholds.
 
 Host RAM is the other half of `--offload_model`: the DiT (32.6 GB) and the UMT5
 encoder (11.4 GB) both sit in host memory between clips. 64 GB is the minimum,
