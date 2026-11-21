@@ -275,36 +275,46 @@ def render(
         log_path=log_path,
         audio_for_model=padded_audio,
     )
-    result: RenderResult = engine.render(request)
 
-    if result.synthetic:
-        output_path.write_bytes(result.path.read_bytes())
-        output_info: dict[str, Any] = {"synthetic": True}
-    else:
-        # Always re-mux: it guarantees an audio stream (upstream's merge can
-        # fail quietly), ends picture and sound at the same instant, and writes
-        # a faststart mp4.
-        mux_audio(
-            result.path,
-            performance.audio,
-            output_path,
-            duration=min(plan.video_seconds, plan.audio_seconds),
-            ffmpeg=settings.ffmpeg,
-        )
-        if params["conform_fps"]:
-            conform_fps(
+    # The performance ends where the shorter stream ends. Both bounds are
+    # explicit: -t alone lets B-frame DTS overshoot the frame count.
+    end_seconds = min(plan.video_seconds, plan.audio_seconds)
+    end_frames = max(1, round(end_seconds * plan.fps))
+    try:
+        result: RenderResult = engine.render(request)
+
+        if result.synthetic:
+            output_path.write_bytes(result.path.read_bytes())
+            output_info: dict[str, Any] = {"synthetic": True}
+        else:
+            # Always re-mux: it guarantees an audio stream (upstream's merge can
+            # fail quietly), ends picture and sound at the same instant, and
+            # writes a faststart mp4.
+            mux_audio(
+                result.path,
+                performance.audio,
                 output_path,
-                params["conform_fps"],
+                duration=end_seconds,
+                frames=end_frames,
                 ffmpeg=settings.ffmpeg,
             )
-        output_info = _verify(
-            output_path, plan, settings, conform_fps_value=params["conform_fps"]
-        )
-
-    if padded_audio is not None and padded_audio.exists():
-        padded_audio.unlink()
-    if not result.synthetic and raw_path.exists():
-        raw_path.unlink()
+            if params["conform_fps"]:
+                conform_fps(
+                    output_path,
+                    params["conform_fps"],
+                    ffmpeg=settings.ffmpeg,
+                )
+            output_info = _verify(
+                output_path, plan, settings, conform_fps_value=params["conform_fps"]
+            )
+    finally:
+        # A failed render leaves no half-baked working files behind.
+        for temporary in (padded_audio, raw_path):
+            if temporary is not None and temporary.exists():
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
 
     finished_at = _now()
     manifest = {

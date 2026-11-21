@@ -128,16 +128,18 @@ def mux_audio(
     destination: str | Path | None = None,
     *,
     duration: float | None = None,
+    frames: int | None = None,
     ffmpeg: str = "ffmpeg",
     timeout: int = 3600,
 ) -> Path:
     """Mux the track onto the picture and end both at the same instant.
 
-    With ``duration`` the cut is explicit (``-t``). ``-shortest`` is only a
-    fallback, because it truncates by the *packet* timestamp of the shortest
-    stream: with B-frames in the copied video and AAC priming in the encoded
-    audio it drops the final frames (measured: 3 frames, 0.19 s) even when the
-    two streams are nominally the same length.
+    With ``duration``/``frames`` the cut is explicit. ``-t`` alone is not
+    enough for a copied stream: B-frames make DTS trail PTS, so packets past
+    the cut are still written (measured: 50 frames for a 3.000 s cut) and
+    ``-shortest`` is worse — it truncates by the shortest stream's packet end
+    and drops the last frames even when both streams nominally agree.
+    ``-frames:v`` caps the picture exactly; ``-t`` trims the re-encoded audio.
     """
     video = Path(video)
     audio = Path(audio)
@@ -161,9 +163,11 @@ def mux_audio(
         "-b:a",
         "192k",
     ]
+    if frames is not None:
+        command += ["-frames:v", str(int(frames))]
     if duration is not None:
         command += ["-t", f"{duration:.3f}"]
-    else:
+    elif frames is None:
         command.append("-shortest")
     command += ["-movflags", "+faststart", str(temp)]
     _run(command, timeout=timeout)

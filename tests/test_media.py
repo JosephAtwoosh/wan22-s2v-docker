@@ -27,18 +27,19 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     return commands
 
 
-def test_mux_uses_an_explicit_duration(captured, tmp_path: Path):
+def test_mux_uses_an_explicit_duration_and_frame_cap(captured, tmp_path: Path):
     video = tmp_path / "video.mp4"
     audio = tmp_path / "audio.wav"
     video.write_bytes(b"v")
     audio.write_bytes(b"a")
     destination = tmp_path / "out.mp4"
 
-    media.mux_audio(video, audio, destination, duration=3.0)
+    media.mux_audio(video, audio, destination, duration=3.0, frames=48)
 
     command = captured[0]
     assert "-t" in command
     assert command[command.index("-t") + 1] == "3.000"
+    assert command[command.index("-frames:v") + 1] == "48"
     assert "-shortest" not in command
     assert command[command.index("-c:v") + 1] == "copy"
 
