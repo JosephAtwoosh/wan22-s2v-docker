@@ -197,7 +197,7 @@ def plan(
     image_height, image_width = image_size
     if infer_frames % 4 != 0:
         raise ValueError(f"infer_frames must be a multiple of 4, got {infer_frames}")
-    if infer_frames < 24 or infer_frames > 160:
+    if infer_frames < 12 or infer_frames > 160:
         raise ValueError("infer_frames must be between 24 and 160")
     if audio_seconds <= 0:
         raise ValueError("audio duration must be positive")

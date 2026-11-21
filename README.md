@@ -206,6 +206,23 @@ without rendering; `--limit` renders the first N.
 
 ---
 
+## Whole scenes
+
+A scene is a folder of shots. [`tools/run_scene.ps1`](tools/run_scene.ps1)
+packs the clip stills, the speaker-turn WAVs and the per-shot prompts, builds one
+performance folder per shot on the GPU box, renders them (resumable), and
+concatenates the result into `scene.mp4`:
+
+```powershell
+pwsh tools/run_scene.ps1 -SshHost ssh8.vast.ai -SshPort 16096
+```
+
+It runs [`tools/build_scene_pack.py`](tools/build_scene_pack.py) and
+[`tools/scene_run.sh`](tools/scene_run.sh) remotely. The soundtrack is the turns
+concatenated with short gaps and sliced at the shot boundaries — no music, no
+effects. Details, VRAM trade-offs and the cost of a scene are in
+[docs/SCENE.md](docs/SCENE.md).
+
 ## HTTP API
 
 ```bash

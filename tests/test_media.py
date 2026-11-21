@@ -27,21 +27,36 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     return commands
 
 
-def test_mux_uses_an_explicit_duration_and_frame_cap(captured, tmp_path: Path):
+def test_mux_re_encodes_for_an_exact_frame_cut(captured, tmp_path: Path):
     video = tmp_path / "video.mp4"
     audio = tmp_path / "audio.wav"
     video.write_bytes(b"v")
     audio.write_bytes(b"a")
     destination = tmp_path / "out.mp4"
 
-    media.mux_audio(video, audio, destination, duration=3.0, frames=48)
+    media.mux_audio(video, audio, destination, duration=2.6, frames=42)
 
     command = captured[0]
     assert "-t" in command
-    assert command[command.index("-t") + 1] == "3.000"
-    assert command[command.index("-frames:v") + 1] == "48"
+    assert command[command.index("-t") + 1] == "2.600"
+    assert command[command.index("-frames:v") + 1] == "42"
+    # -c:v copy ignores -frames:v (measured 45 frames for a 42-frame cut), so
+    # the exact cut has to be encoded.
+    assert command[command.index("-c:v") + 1] == "libx264"
     assert "-shortest" not in command
-    assert command[command.index("-c:v") + 1] == "copy"
+
+
+def test_mux_retimes_and_cuts_in_one_encode(captured, tmp_path: Path):
+    video = tmp_path / "video.mp4"
+    audio = tmp_path / "audio.wav"
+    video.write_bytes(b"v")
+    audio.write_bytes(b"a")
+
+    media.mux_audio(video, audio, tmp_path / "out.mp4", duration=1.0, frames=24, fps=24)
+
+    command = captured[0]
+    assert command[command.index("-vf") + 1] == "fps=24"
+    assert command[command.index("-frames:v") + 1] == "24"
 
 
 def test_mux_falls_back_to_shortest_without_a_duration(captured, tmp_path: Path):

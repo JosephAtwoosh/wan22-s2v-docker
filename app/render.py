@@ -21,7 +21,7 @@ from typing import Any
 from . import __version__
 from .config import SIZE_PRESETS, Settings
 from .engine import Engine, RenderRequest, RenderResult, pick_seed
-from .media import MediaError, conform_fps, mux_audio, pad_audio, probe
+from .media import MediaError, mux_audio, pad_audio, probe
 from .performance import (
     Performance,
     PerformanceError,
@@ -97,7 +97,7 @@ def resolve_params(
             )
         params["size"] = size
     if "infer_frames" in merged:
-        frames = _check_int("infer_frames", merged["infer_frames"], 24, 160)
+        frames = _check_int("infer_frames", merged["infer_frames"], 12, 160)
         if frames % 4:
             raise PerformanceError(f"infer_frames must be a multiple of 4, got {frames}")
         params["infer_frames"] = frames
@@ -276,10 +276,12 @@ def render(
         audio_for_model=padded_audio,
     )
 
-    # The performance ends where the shorter stream ends. Both bounds are
-    # explicit: -t alone lets B-frame DTS overshoot the frame count.
+    # The performance ends where the shorter stream ends. The cut is by exact
+    # frame count at the output rate; the 24 fps conform happens in the same
+    # encode, so there is no second generation loss.
     end_seconds = min(plan.video_seconds, plan.audio_seconds)
-    end_frames = max(1, round(end_seconds * plan.fps))
+    out_fps = params["conform_fps"] or plan.fps
+    end_frames = max(1, round(end_seconds * out_fps))
     try:
         result: RenderResult = engine.render(request)
 
@@ -296,14 +298,9 @@ def render(
                 output_path,
                 duration=end_seconds,
                 frames=end_frames,
+                fps=out_fps if out_fps != plan.fps else None,
                 ffmpeg=settings.ffmpeg,
             )
-            if params["conform_fps"]:
-                conform_fps(
-                    output_path,
-                    params["conform_fps"],
-                    ffmpeg=settings.ffmpeg,
-                )
             output_info = _verify(
                 output_path, plan, settings, conform_fps_value=params["conform_fps"]
             )

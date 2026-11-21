@@ -129,17 +129,18 @@ def mux_audio(
     *,
     duration: float | None = None,
     frames: int | None = None,
+    fps: int | None = None,
     ffmpeg: str = "ffmpeg",
     timeout: int = 3600,
 ) -> Path:
-    """Mux the track onto the picture and end both at the same instant.
+    """Mux the track onto the picture, cutting to an exact frame count.
 
-    With ``duration``/``frames`` the cut is explicit. ``-t`` alone is not
-    enough for a copied stream: B-frames make DTS trail PTS, so packets past
-    the cut are still written (measured: 50 frames for a 3.000 s cut) and
-    ``-shortest`` is worse — it truncates by the shortest stream's packet end
-    and drops the last frames even when both streams nominally agree.
-    ``-frames:v`` caps the picture exactly; ``-t`` trims the re-encoded audio.
+    When ``frames`` is given the video is re-encoded: ``-c:v copy`` ignores
+    ``-frames:v`` (measured: a 42-frame cut produced 45 frames, because the
+    muxer writes whole packets and B-frames push the tail past the cut). One
+    libx264 pass at CRF 18 is a few seconds per clip and buys an exact cut.
+    ``fps`` retimes in the same pass, so 16 -> 24 fps costs no second encode.
+    Without ``frames`` the video is copied and ``-shortest`` applies.
     """
     video = Path(video)
     audio = Path(audio)
@@ -156,15 +157,15 @@ def mux_audio(
         "0:v:0",
         "-map",
         "1:a:0",
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
     ]
     if frames is not None:
+        command += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p"]
+        if fps:
+            command += ["-vf", f"fps={int(fps)}"]
         command += ["-frames:v", str(int(frames))]
+    else:
+        command += ["-c:v", "copy"]
+    command += ["-c:a", "aac", "-b:a", "192k"]
     if duration is not None:
         command += ["-t", f"{duration:.3f}"]
     elif frames is None:

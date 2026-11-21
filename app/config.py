@@ -121,7 +121,7 @@ def get_settings() -> Settings:
         performances_dir=Path(_env("PERFORMANCES_DIR", "/performances")),
         engine=engine,
         size=size,
-        infer_frames=_int("INFER_FRAMES", 80, 24, 160),
+        infer_frames=_int("INFER_FRAMES", 80, 12, 160),
         start_from_ref=_flag("START_FROM_REF", True),
         sample_steps=_int("SAMPLE_STEPS", 40, 1, 200),
         guide_scale=_float("GUIDE_SCALE", 4.5),
