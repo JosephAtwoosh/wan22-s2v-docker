@@ -23,6 +23,22 @@ instance a registry token in the template's docker-login fields.
 
 ## 2. Choose the card
 
+Every offer has to clear all six requirements, not just VRAM:
+
+| Requirement | Value | Why |
+|---|---|---|
+| VRAM | **80 GB** (48 GB marginal, untested) | DiT shards are 32.6 GB and go on the card for every clip |
+| Host RAM | **64 GB** | offloaded DiT (32.6 GB) + text encoder (11.4 GB) resident together |
+| Disk | **150 GB** | 15 GB image + 45.6 GB weights + outputs |
+| Driver | **570+** | CUDA 12.8 |
+| Download | **< $4/TB** | weights are a 45.6 GB pull |
+| Upload | **< $4/TB** | outputs are small, but a bad offer charges either way |
+
+`tools/vast.js search` checks all of them locally and refuses to rent an offer
+that misses one. Vast also lists GB10 (Grace Blackwell) boxes at ~$0.27/h that
+appear to clear the VRAM bar; they are ARM with unified memory, and this image
+is amd64 with a cp312 x86_64 flash-attn wheel, so they cannot run it.
+
 | Card | VRAM | Rough price | Fit |
 |---|---|---|---|
 | A100 SXM4 80 GB | 80 GB | $1.00–1.60/h | the upstream-recommended configuration |

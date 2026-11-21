@@ -102,6 +102,8 @@ function parseFlags(argv) {
     else if (arg === "--onstart") flags.onstart = argv[++i];
     else if (arg === "--name") flags.name = argv[++i];
     else if (arg === "--max-inet") flags.maxInet = Number(argv[++i]);
+    else if (arg === "--ram-gb") flags.ramGb = Number(argv[++i]);
+    else if (arg === "--driver") flags.driver = Number(argv[++i]);
     else if (arg === "--transfer-gb") flags.transferGb = Number(argv[++i]);
     else flags._.push(arg);
   }
@@ -138,6 +140,16 @@ function perTb(offer, tbKey, gbKey) {
  */
 function vramGb(offer) {
   return Math.round((offer.gpu_total_ram || 0) / 1024);
+}
+
+function ramGb(offer) {
+  return Math.round((offer.cpu_ram || 0) / 1024);
+}
+
+/** "580.95.05" -> 580, so the CUDA 12.8 driver floor can be compared. */
+function driverMajor(offer) {
+  const major = Number(String(offer.driver_version || "0").split(".")[0]);
+  return Number.isFinite(major) ? major : 0;
 }
 
 async function offers(names, minVramGb, minDiskGb, key) {
@@ -214,26 +226,35 @@ async function main() {
     }
 
     case "search": {
-      const names = (flags._[0] || "A100 SXM4,H100 PCIE").split(",").map((s) => s.trim());
+      const names = (flags._[0] || "A100 SXM4,A100 PCIE,H100 PCIE,H100 SXM").split(",").map((s) => s.trim());
       const minVram = Number(flags._[1] || 79);
       const minDisk = Number(flags._[2] || 150);
+      const minRam = flags.ramGb ?? 64;
+      const minDriver = flags.driver ?? 570;
+      const maxInet = flags.maxInet ?? 4;
       const key = findKey();
       const pool = await offers(names, minVram, minDisk, key?.key);
       if (pool.status !== 200) {
         console.error("status", pool.status, JSON.stringify(pool.body).slice(0, 500));
         process.exit(1);
       }
-      const maxInet = flags.maxInet ?? 4;
       const ranked = pool.list
         .map((o) => ({
           ...o,
           downTb: perTb(o, "internet_down_cost_per_tb", "inet_down_cost"),
           upTb: perTb(o, "internet_up_cost_per_tb", "inet_up_cost"),
         }))
-        .filter((o) => o.downTb < maxInet && o.upTb < maxInet);
+        .filter(
+          (o) =>
+            ramGb(o) >= minRam &&
+            driverMajor(o) >= minDriver &&
+            o.downTb < maxInet &&
+            o.upTb < maxInet,
+        );
       if (!ranked.length) {
         console.error(
-          `No offers with >= ${minVram} GB VRAM, >= ${minDisk} GB disk and < $${maxInet}/TB both ways.`,
+          `No offers with >= ${minVram} GB VRAM, >= ${minRam} GB RAM, >= ${minDisk} GB disk, ` +
+            `driver >= ${minDriver} and < $${maxInet}/TB both ways.`,
         );
         process.exit(1);
       }
@@ -242,19 +263,24 @@ async function main() {
           offer: o.id,
           gpu: `${o.num_gpus}x ${o.gpu_name}`,
           vram_gb: vramGb(o),
-          ram_gb: Math.round((o.cpu_ram || 0) / 1024),
+          ram_gb: ramGb(o),
           disk_gb: Math.round(o.disk_space || 0),
           down_tb: Number(o.downTb.toFixed(2)),
           up_tb: Number(o.upTb.toFixed(2)),
           weights_usd: Number(((45.6 / 1024) * o.downTb).toFixed(2)),
           mbps: `${Math.round(o.inet_down || 0)}/${Math.round(o.inet_up || 0)}`,
           driver: o.driver_version,
+          rel: Number((o.reliability2 ?? o.reliability ?? 0).toFixed(2)),
+          geo: String(o.geolocation || "").split(",").pop().trim(),
           usd_hr: Number((o.dph_total || 0).toFixed(3)),
         })),
       );
       console.log(
-        `\n${ranked.length} offer(s) >= ${minVram} GB VRAM, < $${maxInet}/TB both ways. ` +
-          "The image needs driver >= 570 (CUDA 12.8).",
+        `\n${ranked.length} offer(s): >= ${minVram} GB VRAM, >= ${minRam} GB RAM, ` +
+          `>= ${minDisk} GB disk, driver >= ${minDriver}, < $${maxInet}/TB each way.`,
+      );
+      console.log(
+        "Total for the first run: 45.6 GB down (weights) + ~8 GB image + 1 GB up, plus instance time.",
       );
       break;
     }
@@ -272,8 +298,23 @@ async function main() {
       const offer = await offerById(flags.offer, key.key);
       if (offer && !flags.allowSmall && vramGb(offer) < 48) {
         console.error(
-          `Refusing: offer ${flags.offer} has ${vramGb(offer)} GB VRAM; the 14B DiT is ~28 GB and needs ` +
-            "at least 48 GB (80 GB recommended). Override with --allow-small if you know better.",
+          `Refusing: offer ${flags.offer} has ${vramGb(offer)} GB VRAM; the DiT shards are 32.6 GB ` +
+            "in bf16 and need at least 48 GB (80 GB recommended). Override with --allow-small if " +
+            "you know better.",
+        );
+        process.exit(2);
+      }
+      if (offer && !flags.allowSmall && ramGb(offer) < 64) {
+        console.error(
+          `Refusing: offer ${flags.offer} has ${ramGb(offer)} GB host RAM; the offloaded DiT ` +
+            "(32.6 GB) and the text encoder (11.4 GB) are resident at once, so 64 GB is the " +
+            "minimum. Override with --allow-small if you know better.",
+        );
+        process.exit(2);
+      }
+      if (offer && driverMajor(offer) < 570) {
+        console.error(
+          `Refusing: offer ${flags.offer} runs driver ${offer.driver_version}; CUDA 12.8 needs 570+.`,
         );
         process.exit(2);
       }
@@ -283,7 +324,8 @@ async function main() {
         const maxInet = flags.maxInet ?? 4;
         const transferGb = flags.transferGb ?? 50;
         console.log(
-          `offer ${flags.offer}: ${vramGb(offer)} GB, $${Number(offer.dph_total).toFixed(3)}/h, ` +
+          `offer ${flags.offer}: ${vramGb(offer)} GB VRAM, ${ramGb(offer)} GB RAM, ` +
+            `$${Number(offer.dph_total).toFixed(3)}/h, ` +
             `down $${downTb.toFixed(2)}/TB up $${upTb.toFixed(2)}/TB`,
         );
         console.log(
@@ -361,7 +403,7 @@ async function main() {
     default:
       console.error(
         "usage: node tools/vast.js {whoami|instances|search|rent|ssh|stop|start|destroy} [...]\n" +
-          "  search 'A100 SXM4,H100 PCIE' 79 150\n" +
+          "  search 'A100 SXM4,H100 PCIE' 79 150 [--ram-gb 64] [--driver 570] [--max-inet 4]\n" +
           "  rent --offer 123 --disk 150 --env WAN_API_KEY=... --port 8000:8000 --yes",
       );
       process.exit(2);

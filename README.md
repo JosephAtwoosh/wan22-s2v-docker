@@ -45,6 +45,7 @@ recipe.
 | Driver | 570+ (CUDA 12.8) | 580+ |
 | RAM | 64 GB | 96 GB |
 | Disk | 80 GB | 150 GB (45.6 GB weights + image + outputs) |
+| Bandwidth | **< $4/TB each direction** | lowest on offer |
 
 Upstream's own single-GPU figure is **80 GB**, and the arithmetic says the same.
 The checkpoint's DiT shards alone are **32.6 GB** in bf16 (14B parameters plus
