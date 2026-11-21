@@ -16,3 +16,7 @@ decord==0.6.0
 librosa==0.11.0
 opencv-python-headless==4.11.0.86
 peft==0.17.0
+# Not used for anything we call, but `generate.py` imports
+# wan.utils.prompt_extend at module load and that imports dashscope
+# unconditionally, so the renderer cannot start without it.
+dashscope==2.1.1
