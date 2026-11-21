@@ -41,15 +41,22 @@ recipe.
 
 | | Minimum | Recommended |
 |---|---|---|
-| GPU | 48 GB, 480p, short clips (untested) | 80 GB (A100/H100) |
+| GPU | 48 GB — marginal, untested (480p only) | 80 GB (A100/H100) |
 | Driver | 570+ (CUDA 12.8) | 580+ |
-| RAM | 32 GB | 64 GB |
-| Disk | 80 GB | 150 GB (45.6 GB weights + outputs) |
+| RAM | 64 GB | 96 GB |
+| Disk | 80 GB | 150 GB (45.6 GB weights + image + outputs) |
 
-Upstream's own single-GPU figure is **80 GB**. The 14B DiT is ~28 GB in bf16
-and `--offload_model` still materialises the whole model on the card for each
-clip, so the headroom is not optional at 720p. `doctor` warns below 70 GiB and
-fails below 32 GiB (the weights alone will not fit).
+Upstream's own single-GPU figure is **80 GB**, and the arithmetic says the same.
+The checkpoint's DiT shards alone are **32.6 GB** in bf16 (14B parameters plus
+the audio-injection and motion modules), and `--offload_model` still moves the
+whole model onto the card for every clip; the UMT5 encoder (11.4 GB) also visits
+the card before sampling starts. That leaves a 48 GB card roughly 4 GB of slack
+for activations, which is why 80 GB is the supported configuration: `doctor`
+warns below 70 GiB and fails below 40 GiB (the weights alone will not fit).
+
+Host RAM is what holds the offloaded pieces between clips: the DiT (32.6 GB)
+and the text encoder (11.4 GB) are both resident at once, so 64 GB is the real
+minimum. With `--no-offload` on an 80 GB card, RAM drops to ~32 GB.
 
 The image is CUDA 12.8 on Ubuntu 24.04, Python 3.12. flash-attention is a
 prebuilt wheel (`cu12`, torch 2.8, cp312); nothing compiles at build time.
@@ -286,7 +293,8 @@ clips; a 42 s line is 9 clips in one process, and model load is paid once.
 
 **OOM at 720p on a 48 GB card.** Use `--size 480p` and fewer clips
 (`--max-clips 1` for a test), keep `OFFLOAD_MODEL=1`, and do not pass
-`--no-offload`. The DiT is 28 GB before activations.
+`--no-offload`. The DiT is 32.6 GB before activations, and the text encoder is
+on the card with it during prompt encoding.
 
 **`flash_attn` import fails.** The image ships a prebuilt wheel for cp312 +
 torch 2.8 + cu12. A rebuilt image with a different torch needs a matching

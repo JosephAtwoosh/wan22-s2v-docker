@@ -27,11 +27,17 @@ instance a registry token in the template's docker-login fields.
 |---|---|---|---|
 | A100 SXM4 80 GB | 80 GB | $1.00–1.60/h | the upstream-recommended configuration |
 | H100 PCIE 80 GB | 80 GB | $1.80–2.60/h | faster, same fit |
-| L40S 48 GB | 48 GB | $0.70–1.00/h | **untested**; 480p and short clips only |
+| L40S 48 GB | 48 GB | $0.70–1.00/h | **marginal and untested**; 480p only |
 
-The 14B DiT is ~28 GB in bf16 and is materialised on the card for every clip,
-so 48 GB leaves very little for activations at 720p. If the first 48 GB attempt
-OOMs, it is the card, not the code.
+The checkpoint's DiT shards are **32.6 GB** in bf16 and are moved onto the card
+for every clip; the UMT5 encoder (11.4 GB) is also on the card while the prompt
+is encoded. A 48 GB card therefore has only a few GB for activations: 480p may
+finish, 720p is expected to OOM. Below 40 GB the weights do not fit at all.
+`doctor` encodes exactly these thresholds.
+
+Host RAM is the other half of `--offload_model`: the DiT (32.6 GB) and the UMT5
+encoder (11.4 GB) both sit in host memory between clips. 64 GB is the minimum,
+96 GB is comfortable. Vast's `ram_gb` column in `search` is the number to read.
 
 The image pulls in about a minute or two on a hosted box: 24 layers, ~7.7 GB
 compressed. That transfer is counted too — budget it with the weights.

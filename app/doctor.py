@@ -153,20 +153,22 @@ def run_checks(settings: Settings) -> Report:
             report.add("gpu", OK, f"{name}, {vram_gib:.0f} GiB, driver {driver}")
             if vram_gib >= 70:
                 report.add("gpu", OK, "VRAM meets the upstream 80 GB single-GPU figure")
-            elif vram_gib >= 32:
+            elif vram_gib >= 40:
                 report.add(
                     "gpu",
                     WARN,
-                    f"{vram_gib:.0f} GiB is below upstream's 80 GB figure: the 14B DiT is "
-                    "~28 GB in bf16 and is materialised on the GPU for every clip, so 480p "
-                    "with a short clip count is the only configuration likely to finish",
+                    f"{vram_gib:.0f} GiB is below upstream's 80 GB figure: the DiT shards are "
+                    "32.6 GB in bf16 and are materialised on the card for every clip, with the "
+                    "11.4 GB text encoder also resident during prompt encoding. 480p with short "
+                    "clips may finish; 720p is expected to OOM",
                 )
             else:
                 report.add(
                     "gpu",
                     FAIL,
-                    f"{vram_gib:.0f} GiB cannot hold the 14B DiT (~28 GB in bf16) plus "
-                    "activations; use a 48 GB or 80 GB card",
+                    f"{vram_gib:.0f} GiB cannot hold the DiT shards (32.6 GB) plus the CUDA "
+                    "context and activations; 48 GB is the practical floor and 80 GB is "
+                    "recommended",
                 )
 
     # --------------------------------------------------------------- libraries
