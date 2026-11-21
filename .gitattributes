@@ -1,0 +1,10 @@
+# Keep shell and Python files LF everywhere: they run inside Linux containers
+# and CRLF breaks shebangs and upstream's own generate.py wrapper.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.mp4 binary
+*.wav binary
+*.png binary
+*.jpg binary

@@ -1,0 +1,42 @@
+name: wan22-s2v
+
+services:
+  wan22:
+    build:
+      context: .
+      args:
+        WAN_REF: ${WAN_REF:-1ea34ff48f87168174e12956e200b1d908b1c5ff}
+    image: ${WAN22_IMAGE:-ghcr.io/josephatwoosh/wan22-s2v-docker:latest}
+    env_file:
+      - .env
+    environment:
+      MODEL_ID: /models/Wan2.2-S2V-14B
+      OUTPUT_DIR: /output
+      PERFORMANCES_DIR: /performances
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - "${MODELS_HOST_DIR:-./models}:/models"
+      - "${PERFORMANCES_HOST_DIR:-./performances}:/performances"
+      - "${OUTPUT_HOST_DIR:-./output}:/output"
+    shm_size: "16gb"
+    # One render can be 45 GB of weights plus activations; give the process
+    # room but do not let a stuck job run forever (RENDER_TIMEOUT_S also applies).
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  downloader:
+    profiles: ["download"]
+    image: ${WAN22_IMAGE:-ghcr.io/josephatwoosh/wan22-s2v-docker:latest}
+    entrypoint: ["/opt/wan-docker/scripts/download-models.sh"]
+    volumes:
+      - "${MODELS_HOST_DIR:-./models}:/models"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_MAX_WORKERS: ${HF_MAX_WORKERS:-8}

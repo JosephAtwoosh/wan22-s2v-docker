@@ -1,0 +1,13 @@
+# Docker build context exclusions.
+.git
+.github
+models/
+output/
+performances/
+*.mp4
+*.wav
+*.mp3
+__pycache__/
+.pytest_cache/
+*.pyc
+.env

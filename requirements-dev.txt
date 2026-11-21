@@ -1,0 +1,4 @@
+# CPU-only, for `pytest tests/` in CI and on a laptop.
+-r requirements-core.txt
+pytest==9.2.0
+httpx==0.28.1

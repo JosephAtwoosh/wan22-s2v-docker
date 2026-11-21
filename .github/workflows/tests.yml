@@ -1,0 +1,42 @@
+name: tests
+
+# The planning, contract and API tests are CPU-only: no torch, no GPU, no
+# ffmpeg (WAV durations fall back to the stdlib wave reader). They are the same
+# tests the image runs in the build smoke step.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-*.txt
+
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Byte-compile the package
+        run: python -m compileall -q app
+
+      - name: Run tests
+        run: python -m pytest tests -q
+
+      - name: CLI smoke (no GPU, no model)
+        run: |
+          set -eux
+          python -m app.cli version
+          python -m app.cli --help >/dev/null
+          python -m app.cli plan --help >/dev/null

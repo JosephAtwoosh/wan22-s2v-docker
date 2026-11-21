@@ -1,0 +1,4 @@
+# Everything the image needs, minus torch: torch is installed first from the
+# CUDA 12.8 index so it cannot be resolved to a CPU-only wheel.
+-r requirements-core.txt
+-r requirements-ml.txt

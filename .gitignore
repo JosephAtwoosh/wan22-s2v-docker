@@ -1,0 +1,14 @@
+# Inputs and outputs, never the code.
+models/
+output/
+performances/
+.env
+*.mp4
+*.wav
+*.mp3
+*.log
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
