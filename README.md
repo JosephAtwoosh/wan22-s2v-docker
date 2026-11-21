@@ -17,11 +17,12 @@ rubbery: the model spends the clip trying to arrive at a shape it was handed
 instead of finishing the performance the track asked for. Wan2.2-S2V drives
 the whole clip from the audio, so the ending is an outcome, not a constraint.
 
-Status: **the code, service and planning are tested on CPU (111 tests) and the
-image builds in CI. It has not yet been rendered on a rented GPU** — treat the
-first GPU run as verification, not production: `wan22-s2v selftest` renders a
-synthetic clip to prove the stack, then one real shot. See
-[docs/VAST.md](docs/VAST.md) for the rental recipe.
+Status: **the code, service and planning are tested on CPU (111 tests, and the
+same suite runs inside the built image) and the image builds in CI. It has not
+yet been rendered on a rented GPU** — treat the first GPU run as verification,
+not production: `wan22-s2v selftest` renders a synthetic clip to prove the
+stack, then one real shot. See [docs/VAST.md](docs/VAST.md) for the rental
+recipe.
 
 - **One still, one track** — no end frame, no pose video, no keyframe pair.
 - **Planned before it costs anything** — `plan` reports the exact resolution,

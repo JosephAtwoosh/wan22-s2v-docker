@@ -33,6 +33,9 @@ The 14B DiT is ~28 GB in bf16 and is materialised on the card for every clip,
 so 48 GB leaves very little for activations at 720p. If the first 48 GB attempt
 OOMs, it is the card, not the code.
 
+The image pulls in about a minute or two on a hosted box: 24 layers, ~7.7 GB
+compressed. That transfer is counted too — budget it with the weights.
+
 `tools/vast.js` filters by VRAM in **GB**, not MB (Vast's own API takes GB; the
 MB mistake returns an empty market):
 
