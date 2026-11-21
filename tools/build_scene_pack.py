@@ -37,7 +37,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompts", required=True, help="directory of <shot>/prompt.txt + manifest.csv")
     parser.add_argument("--out", required=True, help="output root for performance folders")
     parser.add_argument("--timings", default=None, help="manifest.csv (default: <prompts>/manifest.csv)")
-    parser.add_argument("--gap", type=float, default=0.45, help="silence between turns (s)")
+    parser.add_argument("--gap", type=float, default=0.45, help="silence between turns when packing (s)")
+    parser.add_argument(
+        "--starts",
+        default=None,
+        help="CSV of planned start_s per turn (one per turn, filename order). "
+        "With this, each turn is anchored at its planned start and delayed on "
+        "collision instead of being packed back-to-back; a shot then carries only "
+        "the line that belongs in it.",
+    )
     parser.add_argument("--scene-seconds", type=float, default=None, help="pad to this length (default: sum of shots)")
     parser.add_argument("--rate", type=int, default=RATE)
     return parser.parse_args()
@@ -82,11 +90,39 @@ def main() -> None:
     scene_seconds = args.scene_seconds or sum(float(row["duration_s"]) for row in rows)
 
     gap = b"\x00\x00" * int(args.gap * args.rate)
-    parts = []
-    for index, turn in enumerate(sorted(turns.glob("*.wav"))):
-        if index:
-            parts.append(gap)
-        parts.append(read_pcm(turn, args.rate))
+    turn_files = sorted(turns.glob("*.wav"))
+    planned: list[float] | None = None
+    if args.starts:
+        with open(args.starts, encoding="utf-8") as handle:
+            rows_in = list(csv.reader(handle))
+        planned = []
+        for row in rows_in:
+            if not row or not row[0].strip() or row[0].strip().lower() == "start_s":
+                continue
+            planned.append(float(row[0]))
+        if len(planned) != len(turn_files):
+            raise SystemExit(f"{args.starts}: {len(planned)} starts for {len(turn_files)} turns")
+
+    # Two ways to lay the dialogue down:
+    #  * packing (default): turns back-to-back with a gap. Simple, but the
+    #    dialogue drifts earlier than the cut and a shot can inherit the start
+    #    of the next line (shot 1 carried Mildred's narration).
+    #  * anchored (--starts): each turn starts at its planned time, delayed only
+    #    if the previous line is still running. The picture's line timings are
+    #    respected and no shot carries a line that belongs to a later shot.
+    parts: list[bytes] = []
+    position = 0.0
+    for index, turn in enumerate(turn_files):
+        pcm = read_pcm(turn, args.rate)
+        if planned is not None:
+            start = max(planned[index], position)
+        else:
+            start = 0.0 if index == 0 else position + args.gap
+        silence = start - position
+        if silence > 0:
+            parts.append(b"\x00\x00" * int(round(silence * args.rate)))
+        parts.append(pcm)
+        position = start + len(pcm) / 2 / args.rate
     track = b"".join(parts)
     target = int(round(scene_seconds * args.rate)) * 2
     if len(track) > target:
@@ -99,7 +135,7 @@ def main() -> None:
         handle.setsampwidth(2)
         handle.setframerate(args.rate)
         handle.writeframes(track)
-    print(f"soundtrack {len(track) / 2 / args.rate:.2f}s from {len(list(turns.glob('*.wav')))} turns")
+    print(f"soundtrack {len(track) / 2 / args.rate:.2f}s from {len(turn_files)} turns")
 
     for row in rows:
         shot = row["shot"]

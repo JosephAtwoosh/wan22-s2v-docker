@@ -33,10 +33,25 @@ pwsh tools/run_scene.ps1 -SshHost ssh8.vast.ai -SshPort 16096 `
 
 ## The soundtrack
 
-`build_scene_pack.py` concatenates the speaker turns in filename order with a
-0.45 s gap, pads to the scene length, writes one `soundtrack.wav`, then slices
-it at the shot boundaries. No music, no effects. If a line spans a cut, both
-shots get their half of it, which is what the edit does anyway.
+By default `build_scene_pack.py` packs the speaker turns back-to-back with a
+0.45 s gap and slices the result at the shot boundaries. Pass `--starts` with a
+CSV of planned start times (one per turn, filename order) to **anchor** each
+turn at its intended time instead: a turn starts at its planned second and is
+delayed only if the previous line is still running.
+
+Anchoring is what keeps a line inside the shot it belongs to. Packed, a 5.6 s
+opening line over a 10 s shot leaves 4.4 s of silence that the next turn fills
+early, so the narrator starts speaking over shot 1. Anchored, shot 1 ends on
+silence and the narration begins exactly at shot 2.
+
+```bash
+python3 tools/build_scene_pack.py --clips clips --turns turns --prompts prompts \
+  --timings prompts/manifest.csv --starts prompts/turn-starts.csv --out /scene01
+```
+
+`turn-starts.csv` is one row per turn (`start_s`), in filename order. The
+scene-1 values come from the cut's line timings (0, 10.031, 23.057, 34.086, …).
+No music, no effects: the soundtrack is the turns and silence.
 
 ## VRAM and the clip length
 

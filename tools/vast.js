@@ -261,6 +261,7 @@ async function main() {
       console.table(
         ranked.slice(0, 15).map((o) => ({
           offer: o.id,
+          machine: o.machine_id,
           gpu: `${o.num_gpus}x ${o.gpu_name}`,
           vram_gb: vramGb(o),
           ram_gb: ramGb(o),
