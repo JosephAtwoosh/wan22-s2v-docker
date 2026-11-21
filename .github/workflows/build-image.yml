@@ -18,6 +18,12 @@ on:
         description: "Wan-Video/Wan2.2 commit to build against"
         required: true
         default: "1ea34ff48f87168174e12956e200b1d908b1c5ff"
+  # A tag push is the trigger that works with a contents-only token:
+  # workflow_dispatch needs Actions write, which a fine-grained PAT usually
+  # does not have. Push `build-*` to build (tools/publish.js --tag does this).
+  push:
+    tags:
+      - "build-*"
 
 permissions:
   contents: read

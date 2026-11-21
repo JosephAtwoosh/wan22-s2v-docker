@@ -38,6 +38,7 @@ function parseArgs(argv) {
     dryRun: false,
     prune: false,
     description: null,
+    tag: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -48,6 +49,7 @@ function parseArgs(argv) {
     else if (flag === "--message") args.message = value();
     else if (flag === "--token-file") args.tokenFile = value();
     else if (flag === "--description") args.description = value();
+    else if (flag === "--tag") args.tag = value();
     else if (flag === "--dry-run") args.dryRun = true;
     else if (flag === "--prune") args.prune = true;
     else {
@@ -291,6 +293,17 @@ async function main() {
   if (args.description) {
     const patched = await api(auth, "PATCH", `/repos/${owner}/${repo}`, { description: args.description });
     console.log(`description -> HTTP ${patched.status}`);
+  }
+
+  if (args.tag) {
+    const tagged = await api(auth, "POST", `/repos/${owner}/${repo}/git/refs`, {
+      ref: `refs/tags/${args.tag}`,
+      sha: commit.body.sha,
+    });
+    console.log(
+      `tag ${args.tag} -> HTTP ${tagged.status}` +
+        (tagged.status === 201 ? " (a build-* tag triggers the image workflow)" : ""),
+    );
   }
 
   console.log(`\ncommitted ${commit.body.sha.slice(0, 12)} (${entries.length} tree entries)`);

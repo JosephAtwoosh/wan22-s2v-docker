@@ -82,8 +82,9 @@ docker run --gpus all --rm -p 8000:8000 \
 ```
 
 The image is built and pushed by
-[`.github/workflows/build-image.yml`](.github/workflows/build-image.yml) on
-every push to `main`.
+[`.github/workflows/build-image.yml`](.github/workflows/build-image.yml): from
+the Actions tab ("Run workflow"), or by pushing a `build-*` tag (the trigger
+that works with a contents-only token — `tools/publish.js --tag build-1`).
 
 > GHCR packages start **private**, even when the repository is public. For
 > Vast to pull without a registry token, open the package page → *Package
