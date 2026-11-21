@@ -70,7 +70,18 @@ If `doctor` fails on VRAM, stop: fix the card choice rather than the code.
 
 ## 4. Verify, measured
 
-One performance, one clip, deliberately small:
+First, the plumbing, with no assets at all. `selftest` paints its own still and
+synthesises a three-second tone, then renders one 48-frame clip at 480p:
+
+```bash
+wan22-s2v selftest
+```
+
+It proves the weights load, attention runs, the VAE decodes and the mux works.
+If it fails, the log names the layer. It does not prove likeness — that is what
+the real shot is for.
+
+Then one real performance, deliberately small:
 
 ```bash
 wan22-s2v plan    /performances/shot-01 --size 480p --max-clips 1

@@ -17,9 +17,10 @@ rubbery: the model spends the clip trying to arrive at a shape it was handed
 instead of finishing the performance the track asked for. Wan2.2-S2V drives
 the whole clip from the audio, so the ending is an outcome, not a constraint.
 
-Status: **the code, service and planning are tested on CPU (110 tests) and the
+Status: **the code, service and planning are tested on CPU (111 tests) and the
 image builds in CI. It has not yet been rendered on a rented GPU** — treat the
-first GPU run as verification, not production. See
+first GPU run as verification, not production: `wan22-s2v selftest` renders a
+synthetic clip to prove the stack, then one real shot. See
 [docs/VAST.md](docs/VAST.md) for the rental recipe.
 
 - **One still, one track** — no end frame, no pose video, no keyframe pair.
@@ -165,6 +166,7 @@ in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 ```text
 wan22-s2v doctor                       preflight: GPU, VRAM, libraries, weights, ffmpeg
 wan22-s2v download                     fetch the 45.6 GB checkpoint
+wan22-s2v selftest                     synthetic 3 s clip: proves the GPU stack works
 wan22-s2v plan    <performance>         resolution, clips, duration (no GPU)
 wan22-s2v perform <performance>         render one, into the folder or -o
 wan22-s2v batch   <root>                render every performance under a folder

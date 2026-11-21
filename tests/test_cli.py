@@ -85,6 +85,18 @@ def test_perform_out_dir(tmp_path: Path, performance: Path, capsys):
     assert (out / "video.mp4").is_file()
 
 
+def test_selftest_renders_without_assets(tmp_path: Path, capsys):
+    work = tmp_path / "selftest"
+    assert main(["selftest", "--workdir", str(work)]) == 0
+    folder = work / "performance"
+    assert (folder / "start.png").is_file()
+    assert (folder / "audio.wav").is_file()
+    assert (folder / "prompt.txt").is_file()
+    assert (folder / "video.mp4").is_file()
+    assert (folder / "manifest.json").is_file()
+    assert "selftest OK" in capsys.readouterr().out
+
+
 def test_batch_dry_run(tmp_path: Path, capsys):
     root = tmp_path / "scene"
     build_performance(root / "shot-a", seconds=2.0)

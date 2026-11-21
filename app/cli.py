@@ -32,7 +32,7 @@ from .performance import (
     has_performance_artifacts,
     looks_like_performance,
 )
-from .render import LOG_NAME, VIDEO_NAME, plan_for, render, resolve_params
+from .render import LOG_NAME, MANIFEST_NAME, VIDEO_NAME, plan_for, render, resolve_params
 
 log = logging.getLogger("wan22_s2v.cli")
 
@@ -351,6 +351,97 @@ def cmd_batch(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _make_selftest_inputs(workdir: Path, force: bool) -> Path:
+    """Build a performance that needs no assets: a painted still and a tone.
+
+    It verifies plumbing (weights, attention, decode, mux), not likeness. Three
+    seconds at 480p is one 48-frame clip — the cheapest thing that exercises the
+    whole upstream path.
+    """
+    from PIL import Image, ImageDraw
+
+    import math
+    import struct
+    import wave
+
+    folder = workdir / "performance"
+    folder.mkdir(parents=True, exist_ok=True)
+    still = folder / "start.png"
+    track = folder / "audio.wav"
+    prompt = folder / "prompt.txt"
+
+    if force or not still.is_file():
+        image = Image.new("RGB", (768, 768), (54, 58, 62))
+        draw = ImageDraw.Draw(image)
+        for y in range(768):  # soft vertical light, so the model has depth cues
+            shade = 54 + int(70 * (1 - abs(y - 380) / 380))
+            draw.line([(0, y), (768, y)], fill=(shade, shade - 4, shade - 8))
+        draw.ellipse((264, 190, 504, 430), fill=(196, 160, 132))  # head
+        draw.rectangle((300, 430, 468, 768), fill=(70, 76, 88))  # shoulders
+        draw.ellipse((324, 286, 350, 312), fill=(40, 40, 44))
+        draw.ellipse((418, 286, 444, 312), fill=(40, 40, 44))
+        draw.arc((330, 330, 440, 396), start=15, end=165, fill=(90, 60, 55), width=5)
+        image.save(still)
+
+    if force or not track.is_file():
+        rate = 16000
+        seconds = 3.0
+        frames = int(rate * seconds)
+        with wave.open(str(track), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(rate)
+            payload = bytearray()
+            for index in range(frames):
+                t = index / rate
+                # A voiced-sounding buzz with a slow envelope: enough structure
+                # for the audio encoder to produce changing features.
+                envelope = 0.35 * (0.6 + 0.4 * math.sin(2 * math.pi * 3.2 * t))
+                sample = envelope * math.sin(2 * math.pi * 170 * t)
+                sample += 0.15 * envelope * math.sin(2 * math.pi * 340 * t)
+                payload += struct.pack("<h", int(max(-1.0, min(1.0, sample)) * 12000))
+            handle.writeframes(bytes(payload))
+
+    if force or not prompt.is_file():
+        prompt.write_text(
+            "A softly lit close-up portrait of a person speaking to camera, "
+            "plain dark background, calm and conversational.\n",
+            encoding="utf-8",
+        )
+    return folder
+
+
+def cmd_selftest(args: argparse.Namespace) -> int:
+    """Render a synthetic performance end to end. Verifies plumbing, not quality."""
+    settings = _settings_with(args)
+    workdir = Path(args.workdir) if args.workdir else settings.output_dir / "selftest"
+    workdir.mkdir(parents=True, exist_ok=True)
+    folder = _make_selftest_inputs(workdir, args.force)
+
+    performance = discover(folder, max_prompt_chars=settings.max_prompt_chars)
+    overrides = {"size": "480p", "infer_frames": 48, "max_clips": 1, "seed": 42}
+    if args.seed is not None:
+        overrides["seed"] = args.seed
+    params = resolve_params(performance, settings, overrides)
+    plan = plan_for(performance, settings, params)
+    print(f"selftest     {folder}")
+    _print_plan(plan, params)
+    if settings.engine == "mock":
+        print("engine       mock: writes a placeholder, does not touch the GPU")
+
+    engine = build_engine(settings)
+    started = time.monotonic()
+    try:
+        manifest = render(performance, folder, settings, engine, params=params, force=args.force)
+    except (PerformanceError, EngineError, MediaError, OSError) as exc:
+        print(f"selftest FAILED: {exc}", file=sys.stderr)
+        return 2
+    print("selftest OK  " + _manifest_summary(manifest))
+    print(f"manifest     {folder / MANIFEST_NAME}")
+    print(f"wall         {time.monotonic() - started:.0f}s")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -420,6 +511,12 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default=None)
     serve.add_argument("--port", type=int, default=None)
     serve.set_defaults(func=cmd_serve)
+
+    selftest = sub.add_parser("selftest", help="render a synthetic performance end to end")
+    selftest.add_argument("--workdir", default=None, help="where to build it (default /output/selftest)")
+    selftest.add_argument("--seed", type=int, default=None)
+    selftest.add_argument("--force", action="store_true")
+    selftest.set_defaults(func=cmd_selftest)
 
     version = sub.add_parser("version", help="print the version")
     version.set_defaults(func=cmd_version)

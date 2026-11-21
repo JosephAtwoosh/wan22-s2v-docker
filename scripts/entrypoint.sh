@@ -17,7 +17,7 @@ set -euo pipefail
 cd /opt/wan-docker
 
 case "${1:-doctor}" in
-  doctor|download|plan|perform|batch|serve|version)
+  doctor|download|plan|perform|batch|serve|selftest|version)
     exec python -m app.cli "$@"
     ;;
   shell|bash)

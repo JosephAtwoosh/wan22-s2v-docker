@@ -37,7 +37,7 @@ case "$cmd" in
   serve)
     exec docker compose run --rm --service-ports wan22 serve "$@"
     ;;
-  doctor|plan|perform|batch|version|shell)
+  doctor|plan|perform|batch|selftest|version|shell)
     exec docker compose run --rm wan22 "$cmd" "$@"
     ;;
   *)
